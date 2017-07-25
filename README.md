@@ -2,7 +2,8 @@
 Python Examples for Cloud Spanner
 
 
-# How to Set-Up
+How to Set-Up
+---------------
 
 .. code-block:: console
 
