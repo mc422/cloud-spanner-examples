@@ -37,7 +37,8 @@ def setup_accounts(database):
 
         batch.insert_or_update(
             table='Accounts',
-            columns=('CustomerNumber', 'AccountNumber', 'AccountType', 'Balance', 'CreationTime'),
+            columns=('CustomerNumber', 'AccountNumber', 'AccountType',
+                     'Balance', 'CreationTime'),
             values=[
                 (1, 1, 0, 0, datetime.datetime.utcnow()),
                 (1, 2, 1, 0, datetime.datetime.utcnow()),
@@ -54,11 +55,16 @@ def setup_accounts(database):
             table='AccountHistory',
             columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
             values=[
-                (1, datetime.datetime.utcnow(), 0, 'New Account Initial Deposit'),
-                (2, datetime.datetime.utcnow(), 0, 'New Account Initial Deposit'),
-                (3, datetime.datetime.utcnow(), 0, 'New Account Initial Deposit'),
-                (4, datetime.datetime.utcnow(), 0, 'New Account Initial Deposit'),
-                (5, datetime.datetime.utcnow(), 0, 'New Account Initial Deposit'),
+                (1, datetime.datetime.utcnow(), 0,
+                 'New Account Initial Deposit'),
+                (2, datetime.datetime.utcnow(), 0,
+                 'New Account Initial Deposit'),
+                (3, datetime.datetime.utcnow(), 0,
+                 'New Account Initial Deposit'),
+                (4, datetime.datetime.utcnow(), 0,
+                 'New Account Initial Deposit'),
+                (5, datetime.datetime.utcnow(), 0,
+                 'New Account Initial Deposit'),
                  ])            
 
     print('Inserted data.')
@@ -137,8 +143,10 @@ def deposit(database, customer_number, account_number, cents, memo=None):
     def deposit_runner(transaction):
         results = transaction.execute_sql(
             """SELECT Balance From Accounts
-               WHERE AccountNumber={account_number} AND CustomerNumber={customer_number}""".format(
-                account_number=account_number, customer_number=customer_number))
+               WHERE AccountNumber={account_number}
+               AND CustomerNumber={customer_number}""".format(
+                account_number=account_number,
+                customer_number=customer_number))
         old_balance = extract_single_cell(results)
         new_balance = old_balance + cents
         transaction.update(
@@ -168,12 +176,13 @@ def compute_interest_for_all(database):
         # re-check (within the transaction) that the account has not been
         # updated for the current month
         results = transaction.execute_sql(
-            """SELECT Balance,CURRENT_TIMESTAMP() FROM Accounts
-               WHERE AccountNumber=@account AND   # ONLY fetch this one row!
-               (LastInterestCalculation IS NULL OR
-           (EXTRACT(MONTH FROM LastInterestCalculation) <> EXTRACT(MONTH FROM CURRENT_TIMESTAMP()) AND
-            EXTRACT(YEAR FROM LastInterestCalculation) <> EXTRACT(YEAR FROM CURRENT_TIMESTAMP())))
-               LIMIT 1""",
+            """
+    SELECT Balance,CURRENT_TIMESTAMP() FROM Accounts
+    WHERE AccountNumber=@account AND   # ONLY fetch this one row!
+          (LastInterestCalculation IS NULL OR
+          (EXTRACT(MONTH FROM LastInterestCalculation) <> EXTRACT(MONTH FROM CURRENT_TIMESTAMP()) AND
+          EXTRACT(YEAR FROM LastInterestCalculation) <> EXTRACT(YEAR FROM CURRENT_TIMESTAMP())))
+   LIMIT 1""",
             params={'account': account_number},
             param_types={'account': type_pb2.Type(code=type_pb2.INT64)})
 
@@ -204,17 +213,20 @@ def compute_interest_for_all(database):
         # (This is done in a read-only transaction, and hence does not
         # take locks on the table)
         results = database.execute_sql(
-            """SELECT CustomerNumber,AccountNumber FROM Accounts
-               WHERE LastInterestCalculation IS NULL OR
-           (EXTRACT(MONTH FROM LastInterestCalculation) <> EXTRACT(MONTH FROM CURRENT_TIMESTAMP()) AND
-            EXTRACT(YEAR FROM LastInterestCalculation) <> EXTRACT(YEAR FROM CURRENT_TIMESTAMP()))
-               LIMIT 1""")
+            """
+    SELECT CustomerNumber,AccountNumber FROM Accounts
+    WHERE LastInterestCalculation IS NULL OR
+    (EXTRACT(MONTH FROM LastInterestCalculation) <> EXTRACT(MONTH FROM CURRENT_TIMESTAMP()) AND
+    EXTRACT(YEAR FROM LastInterestCalculation) <> EXTRACT(YEAR FROM CURRENT_TIMESTAMP()))
+    LIMIT 1""")
         try:
-            customer_number, account_number = extract_single_row_to_tuple(results)
+            customer_number, account_number = \
+                extract_single_row_to_tuple(results)
         except:
             break
         try:
-            database.run_in_transaction(compute_interest, customer_number, account_number)
+            database.run_in_transaction(compute_interest,
+                                        customer_number, account_number)
         except RowAlreadyUpdated:
             print "Caught RowAlreadyUpdated"
             pass
