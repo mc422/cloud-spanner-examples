@@ -113,10 +113,10 @@ def setup_accounts(database):
             batch.delete(
                 table='AggregateBalance',
                 keyset=spanner.KeySet(all_=True))
-        batch.insert(
-            table='AggregateBalance',
-            columns=('Shard', 'Balance'),
-            values=[(i, 0) for i in range(AGGREGATE_BALANCE_SHARDS)])
+            batch.insert(
+                table='AggregateBalance',
+                columns=('Shard', 'Balance'),
+                values=[(i, 0) for i in range(AGGREGATE_BALANCE_SHARDS)])
 
     print('Inserted data.')
 
