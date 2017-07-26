@@ -164,6 +164,22 @@ def last_n_transactions(database, account_number, n):
     return ret
 
 
+def deposit_helper(transaction, customer_number, account_number, cents, memo,
+                   new_balance, timestamp):
+    transaction.update(
+        table='Accounts',
+        columns=('CustomerNumber', 'AccountNumber', 'Balance'),
+        values=[
+            (customer_number, account_number, new_balance),
+            ])
+
+    transaction.insert(
+        table='AccountHistory',
+        columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
+        values=[
+            (account_number, timestamp, cents, memo),
+            ])
+
 def deposit(database, customer_number, account_number, cents, memo=None):
     def deposit_runner(transaction):
         results = transaction.execute_sql(
@@ -176,19 +192,8 @@ def deposit(database, customer_number, account_number, cents, memo=None):
         if cents < 0 and new_balance < 0:
             raise NegativeBalance
         new_balance = old_balance + cents
-        transaction.update(
-            table='Accounts',
-            columns=('CustomerNumber', 'AccountNumber', 'Balance'),
-            values=[
-                (customer_number, account_number, new_balance),
-                 ])
-
-        transaction.insert(
-            table='AccountHistory',
-            columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
-            values=[
-                (account_number, datetime.datetime.utcnow(), cents, memo),
-                ])
+        deposit_helper(transaction, customer_number, account_number, cents,
+                       memo, new_balance, datetime.datetime.utcnow())
 
     database.run_in_transaction(deposit_runner)
     print('Transaction complete.')
@@ -220,19 +225,14 @@ def compute_interest_for_account(transaction, customer_number, account_number,
     # Ignoring edge-cases around new accounts and pro-rating first month
     cents = int(0.01 * old_balance)  # monthly interest 1%
     new_balance = old_balance + cents
+    deposit_helper(transaction, customer_number, account_number,
+                   cents, 'Monthly Interest', new_balance, current_timestamp)
+
     transaction.update(
         table='Accounts',
-        columns=('CustomerNumber', 'AccountNumber', 'Balance',
-                 'LastInterestCalculation'),
+        columns=('CustomerNumber', 'AccountNumber','LastInterestCalculation'),
         values=[
-            (customer_number, account_number, new_balance, current_timestamp),
-            ])
-
-    transaction.insert(
-        table='AccountHistory',
-        columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
-        values=[
-            (account_number, current_timestamp, cents, 'Monthly Interest'),
+            (customer_number, account_number, current_timestamp),
             ])
 
 
