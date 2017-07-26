@@ -1,12 +1,52 @@
 #!/usr/bin/env python2.7
-# first setup environment by running from bash in this directory:
-# $ source env/bin/activate
 
-# Imports the Google Cloud Client Library.
 from google.cloud import spanner
 from google.cloud.proto.spanner.v1 import type_pb2
 import datetime
 import pprint
+
+"""
+This files assumes a schema:
+
+CREATE TABLE Customers (
+ CustomerNumber INT64 NOT NULL,
+ LastName STRING(MAX),
+ FirstName STRING(MAX),
+) PRIMARY KEY (CustomerNumber);
+
+
+# Note that 'Balance' is a performance optimization in some ways,
+# as it could be reconstructed from AccountHistory
+CREATE TABLE Accounts (
+ CustomerNumber INT64 NOT NULL,
+ AccountNumber INT64 NOT NULL,
+ CreationTime TIMESTAMP NOT NULL,
+ AccountType INT64 NOT NULL,  # (0 - savings, 1 - checking)
+ Balance INT64 NOT NULL # (cents)
+) PRIMARY KEY (CustomerNumber, AccountNumber),
+  INTERLEAVE IN PARENT Customers;
+
+
+# Bank Transaction history for each account.
+# Note: a viable alternative would be to interleave this table in Accounts
+CREATE TABLE AccountHistory (
+  AccountNumber INT64 NOT NULL,
+  Ts TIMESTAMP NOT NULL,
+  Memo STRING(MAX),
+  ChangeAmount INT64 NOT NULL  # cents; positive=credit, negative=debit
+)  PRIMARY KEY (AccountNumber, ts);
+
+
+# enforce that all account numbers are unique
+CREATE UNIQUE INDEX UniqueAccountNumbers on Accounts(AccountNumber);
+
+
+"""
+
+
+
+class RowAlreadyUpdated(Exception):
+    pass
 
 
 def setup_accounts(database):
@@ -59,7 +99,6 @@ def setup_accounts(database):
                  ])            
 
     print('Inserted data.')
-
 
 
 def extract_single_row_to_tuple(results):
@@ -148,10 +187,6 @@ def deposit(database, customer_number, account_number, cents, memo=None):
 
     database.run_in_transaction(deposit_runner)
     print('Transaction complete.')
-
-
-class RowAlreadyUpdated(Exception):
-    pass
 
 
 def compute_interest_for_account(transaction, customer_number, account_number,
