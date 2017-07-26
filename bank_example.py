@@ -4,6 +4,7 @@ from google.cloud import spanner
 from google.cloud.proto.spanner.v1 import type_pb2
 import datetime
 import pprint
+import random
 
 """
 This files assumes a schema:
@@ -39,8 +40,18 @@ CREATE TABLE AccountHistory (
 
 # enforce that all account numbers are unique
 CREATE UNIQUE INDEX UniqueAccountNumbers on Accounts(AccountNumber);
+
+# A "sharded counter" for tracking balance across all accounts.
+# (This is faster than scanning entire accounts table, if Accounts is large)
+# Only used for Lab 3, Exercise 2
+CREATE TABLE AggregateBalance (
+  Shard INT64 NOT NULL,
+  Balance INT64 NOT NULL
+) PRIMARY KEY (Shard);
 """
 
+# if zero, then don't process/use this table at all.
+AGGREGATE_BALANCE_SHARDS = 16
 
 class NegativeBalance(Exception):
     pass
@@ -98,6 +109,14 @@ def setup_accounts(database):
                 (5, datetime.datetime.utcnow(), 0,
                  'New Account Initial Deposit'),
                  ])            
+        if AGGREGATE_BALANCE_SHARDS > 0:
+            batch.delete(
+                table='AggregateBalance',
+                keyset=spanner.KeySet(all_=True))
+        batch.insert(
+            table='AggregateBalance',
+            columns=('Shard', 'Balance'),
+            values=[(i, 0) for i in range(AGGREGATE_BALANCE_SHARDS)])
 
     print('Inserted data.')
 
@@ -179,6 +198,17 @@ def deposit_helper(transaction, customer_number, account_number, cents, memo,
         values=[
             (account_number, timestamp, cents, memo),
             ])
+    if AGGREGATE_BALANCE_SHARDS > 0:
+        shard = random.randint(0, AGGREGATE_BALANCE_SHARDS - 1)
+        results = transaction.execute_sql(
+            "SELECT Balance FROM AggregateBalance WHERE Shard=%d" % shard)
+        old_agg_balance = extract_single_cell(results)
+        new_agg_balance = old_agg_balance + cents
+        transaction.update(
+            table='AggregateBalance',
+            columns=('Shard', 'Balance'),
+            values=[(shard, new_agg_balance)])
+
 
 def deposit(database, customer_number, account_number, cents, memo=None):
     def deposit_runner(transaction):
@@ -268,6 +298,16 @@ def compute_interest_for_all(database):
             pass
 
 
+def verify_consistent_balances(database):
+    if AGGREGATE_BALANCE_SHARDS > 0:
+        balance_slow = extract_single_cell(
+            database.execute_sql("SELECT SUM(Balance) FROM Accounts"))
+        balance_fast = extract_single_cell(
+            database.execute_sql("SELECT SUM(Balance) FROM AggregateBalance"))
+        print "verifying that balances match: ", balance_slow, balance_fast
+        assert balance_fast == balance_slow
+
+
 def main():
     # Instantiate a client.
     spanner_client = spanner.Client()
@@ -301,6 +341,7 @@ def main():
     customer_balance(database, 1)
     last_n_transactions(database, 4, 10)
     compute_interest_for_all(database)
+    verify_consistent_balances(database)
 
 
 if __name__ == "__main__":
