@@ -39,10 +39,11 @@ CREATE TABLE AccountHistory (
 
 # enforce that all account numbers are unique
 CREATE UNIQUE INDEX UniqueAccountNumbers on Accounts(AccountNumber);
-
-
 """
 
+
+class NegativeBalance(Exception):
+    pass
 
 
 class RowAlreadyUpdated(Exception):
@@ -130,6 +131,8 @@ def account_balance(database, account_number):
 
 
 def customer_balance(database, customer_number):
+    """Note: We could implement this method in terms of account_balance,
+    but we explicitly want to demonstrate using JOIN"""
     params = {'customer': customer_number}
     param_types = {'customer': type_pb2.Type(code=type_pb2.INT64)}
     results = database.execute_sql(
@@ -170,6 +173,8 @@ def deposit(database, customer_number, account_number, cents, memo=None):
                 account_number=account_number,
                 customer_number=customer_number))
         old_balance = extract_single_cell(results)
+        if cents < 0 and new_balance < 0:
+            raise NegativeBalance
         new_balance = old_balance + cents
         transaction.update(
             table='Accounts',
@@ -196,7 +201,6 @@ def compute_interest_for_account(transaction, customer_number, account_number,
     results = transaction.execute_sql(
         """
     SELECT Balance, CURRENT_TIMESTAMP() FROM Accounts
-    # ONLY fetch this one row!
     WHERE CustomerNumber=@customer AND AccountNumber=@account AND
           (LastInterestCalculation IS NULL OR
            LastInterestCalculation=@calculation)""",
@@ -284,6 +288,12 @@ def main():
     account_balance(database, 2)
     customer_balance(database, 1)
     deposit(database, 1, 1, 150, 'Dollar Fifty Deposit')
+
+    try:
+        deposit(database, 1, 1, -5000, 'THIS SHOULD FAIL')
+    except:
+        print "Properly failed to go to negative balance"
+
     deposit(database, 1, 2, 75)
     for i in range(20):
         deposit(database, 3, 4, i * 100, 'Deposit %d dollars' % i)
