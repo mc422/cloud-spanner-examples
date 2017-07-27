@@ -28,6 +28,10 @@ CREATE TABLE Accounts (
   INTERLEAVE IN PARENT Customers;
 
 
+# enforce that all account numbers are unique
+CREATE UNIQUE INDEX UniqueAccountNumbers on Accounts(AccountNumber);
+
+
 # Bank Transaction history for each account.
 # Note: a viable alternative would be to interleave this table in Accounts
 CREATE TABLE AccountHistory (
@@ -37,9 +41,6 @@ CREATE TABLE AccountHistory (
   ChangeAmount INT64 NOT NULL  # cents; positive=credit, negative=debit
 )  PRIMARY KEY (AccountNumber, ts);
 
-
-# enforce that all account numbers are unique
-CREATE UNIQUE INDEX UniqueAccountNumbers on Accounts(AccountNumber);
 
 # A "sharded counter" for tracking balance across all accounts.
 # (This is faster than scanning entire accounts table, if Accounts is large)
