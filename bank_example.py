@@ -222,9 +222,9 @@ def deposit(database, customer_number, account_number, cents, memo=None):
                 account_number=account_number,
                 customer_number=customer_number))
         old_balance = extract_single_cell(results)
+        new_balance = old_balance + cents
         if cents < 0 and new_balance < 0:
             raise NegativeBalance
-        new_balance = old_balance + cents
         deposit_helper(transaction, customer_number, account_number, cents,
                        memo, new_balance, datetime.datetime.utcnow())
 
