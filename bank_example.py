@@ -1,10 +1,13 @@
+"""
+Example of a bank schema and a few interesting transactions.
+"""
 #!/usr/bin/env python2.7
 
-from google.cloud import spanner
-from google.cloud.proto.spanner.v1 import type_pb2
 import datetime
 import pprint
 import random
+from google.cloud import spanner
+from google.cloud.proto.spanner.v1 import type_pb2
 
 """
 This files assumes a schema:
@@ -96,7 +99,7 @@ def setup_accounts(database):
                 (2, 3, 0, 0, datetime.datetime.utcnow(), None),
                 (3, 4, 1, 0, datetime.datetime.utcnow(), None),
                 (4, 5, 0, 0, datetime.datetime.utcnow(), None),
-                 ])
+                ])
 
         batch.delete(
             table='AccountHistory',
@@ -116,7 +119,7 @@ def setup_accounts(database):
                  'New Account Initial Deposit'),
                 (5, datetime.datetime.utcnow(), 0,
                  'New Account Initial Deposit'),
-                 ])            
+                ])
         if AGGREGATE_BALANCE_SHARDS > 0:
             batch.delete(
                 table='AggregateBalance',
@@ -126,7 +129,7 @@ def setup_accounts(database):
                 columns=('Shard', 'Balance'),
                 values=[(i, 0) for i in range(AGGREGATE_BALANCE_SHARDS)])
 
-    print('Inserted data.')
+    print 'Inserted data.'
 
 
 def extract_single_row_to_tuple(results):
@@ -154,7 +157,7 @@ def account_balance(database, account_number):
         params=params, param_types=param_types)
     balance = extract_single_cell(results)
     print "ACCOUNT BALANCE", balance
-    return balance    
+    return balance
 
 
 def customer_balance(database, customer_number):
@@ -224,8 +227,8 @@ def deposit(database, customer_number, account_number, cents, memo=None):
             """SELECT Balance From Accounts
                WHERE AccountNumber={account_number}
                AND CustomerNumber={customer_number}""".format(
-                account_number=account_number,
-                customer_number=customer_number))
+                   account_number=account_number,
+                   customer_number=customer_number))
         old_balance = extract_single_cell(results)
         new_balance = old_balance + cents
         if cents < 0 and new_balance < 0:
@@ -234,7 +237,7 @@ def deposit(database, customer_number, account_number, cents, memo=None):
                        memo, new_balance, datetime.datetime.utcnow())
 
     database.run_in_transaction(deposit_runner)
-    print('Transaction complete.')
+    print 'Transaction complete.'
 
 
 def compute_interest_for_account(transaction, customer_number, account_number,
@@ -268,7 +271,7 @@ def compute_interest_for_account(transaction, customer_number, account_number,
 
     transaction.update(
         table='Accounts',
-        columns=('CustomerNumber', 'AccountNumber','LastInterestCalculation'),
+        columns=('CustomerNumber', 'AccountNumber', 'LastInterestCalculation'),
         values=[
             (customer_number, account_number, current_timestamp),
             ])
@@ -281,7 +284,8 @@ def compute_interest_for_all(database):
         # Find any account that hasn't been updated for the current month
         # (This is done in a read-only transaction, and hence does not
         # take locks on the table)
-        results = database.execute_sql("""
+        results = database.execute_sql(
+            """
     SELECT CustomerNumber,AccountNumber,LastInterestCalculation FROM Accounts
     WHERE LastInterestCalculation IS NULL OR
     (EXTRACT(MONTH FROM LastInterestCalculation) <>
@@ -290,7 +294,7 @@ def compute_interest_for_all(database):
        EXTRACT(YEAR FROM CURRENT_TIMESTAMP()))
     LIMIT @batch_size""",
             params={'batch_size': batch_size},
-            param_types = {'customer': type_pb2.Type(code=type_pb2.INT64)})
+            param_types={'customer': type_pb2.Type(code=type_pb2.INT64)})
         zero_results = True
         for customer_number, account_number, last_calculation in results:
             zero_results = False
@@ -338,7 +342,7 @@ def main():
 
     try:
         deposit(database, 1, 1, -5000, 'THIS SHOULD FAIL')
-    except:
+    except NegativeBalance:
         print "Properly failed to go to negative balance"
 
     deposit(database, 1, 2, 75)
