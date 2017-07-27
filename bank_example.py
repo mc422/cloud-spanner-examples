@@ -59,8 +59,13 @@ AGGREGATE_BALANCE_SHARDS = 16
 class NegativeBalance(Exception):
     pass
 
-
 class RowAlreadyUpdated(Exception):
+    pass
+
+class NoResults(Exception):
+    pass
+
+class TooManyResults(Exception):
     pass
 
 
@@ -128,11 +133,11 @@ def extract_single_row_to_tuple(results):
     is_ret_set = False
     for row in results:
         if is_ret_set:
-            raise Exception('Encounted more than one row in results')
+            raise TooManyResults
         ret = tuple(row)
         is_ret_set = True
     if not is_ret_set:
-        raise Exception('Results are empty!')
+        raise NoResults
     return ret
 
 
@@ -250,7 +255,7 @@ def compute_interest_for_account(transaction, customer_number, account_number,
                      'calculation': type_pb2.Type(code=type_pb2.TIMESTAMP)})
     try:
         old_balance, current_timestamp = extract_single_row_to_tuple(results)
-    except:
+    except NoResults:
         # An exception means that the row has already been updated.
         # Abort the transaction.
         raise RowAlreadyUpdated
