@@ -275,36 +275,35 @@ def compute_interest_for_account(transaction, customer_number, account_number,
 
 
 def compute_interest_for_all(database):
+    # In a real production DB, we would use larger batches.
+    batch_size = 2
     while True:
         # Find any account that hasn't been updated for the current month
         # (This is done in a read-only transaction, and hence does not
         # take locks on the table)
-        # Note: In a real production DB, we would process rows in batches
-        # of N instead of batches of 1.
-        results = database.execute_sql(
-            """
+        results = database.execute_sql("""
     SELECT CustomerNumber,AccountNumber,LastInterestCalculation FROM Accounts
     WHERE LastInterestCalculation IS NULL OR
     (EXTRACT(MONTH FROM LastInterestCalculation) <>
        EXTRACT(MONTH FROM CURRENT_TIMESTAMP()) AND
      EXTRACT(YEAR FROM LastInterestCalculation) <>
        EXTRACT(YEAR FROM CURRENT_TIMESTAMP()))
-    LIMIT 1""")
-        try:
-            customer_number, account_number, last_interest_calculation = \
-                extract_single_row_to_tuple(results)
-        except:
-            # results were empty. No more rows to process.
+    LIMIT @batch_size""",
+            params={'batch_size': batch_size},
+            param_types = {'customer': type_pb2.Type(code=type_pb2.INT64)})
+        zero_results = True
+        for customer_number, account_number, last_calculation in results:
+            zero_results = False
+            try:
+                database.run_in_transaction(compute_interest_for_account,
+                                            customer_number, account_number,
+                                            last_calculation)
+                print "Computed interest for account ", account_number
+            except RowAlreadyUpdated:
+                print "Account {account_number} already updated".format(
+                    account_number=account_number)
+        if zero_results:
             break
-        try:
-            database.run_in_transaction(compute_interest_for_account,
-                                        customer_number, account_number,
-                                        last_interest_calculation)
-            print "Computed interest for account ", account_number
-        except RowAlreadyUpdated:
-            print "Caught RowAlreadyUpdated"
-            pass
-
 
 def verify_consistent_balances(database):
     if AGGREGATE_BALANCE_SHARDS > 0:
