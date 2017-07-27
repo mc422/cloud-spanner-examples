@@ -34,12 +34,14 @@ CREATE UNIQUE INDEX UniqueAccountNumbers on Accounts(AccountNumber);
 
 # Bank Transaction history for each account.
 # Note: a viable alternative would be to interleave this table in Accounts
+# Note that we store ts DESC as primary key because this makes
+# iterating latest-first faster.
 CREATE TABLE AccountHistory (
   AccountNumber INT64 NOT NULL,
   Ts TIMESTAMP NOT NULL,
   Memo STRING(MAX),
   ChangeAmount INT64 NOT NULL  # cents; positive=credit, negative=debit
-)  PRIMARY KEY (AccountNumber, ts);
+)  PRIMARY KEY (AccountNumber, ts DESC);
 
 
 # A "sharded counter" for tracking balance across all accounts.
