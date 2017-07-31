@@ -87,7 +87,7 @@ CUSTOMERS = [generate_customer_number() for i in range(5)]
 ACCOUNTS = [generate_account_number() for i in range(5)]
 
 
-def setup_accounts(database):
+def setup_customers(database):
     """Inserts sample data into the given database.
 
     The database and table must already exist and can be created using
@@ -354,7 +354,7 @@ def main():
     # Get a Cloud Spanner database by ID.
     database = instance.database(database_id)
 
-    setup_accounts(database)
+    setup_customers(database)
     account_balance(database, ACCOUNTS[1])
     customer_balance(database, CUSTOMERS[0])
     deposit(database, CUSTOMERS[0], ACCOUNTS[0], 150, 'Dollar Fifty Deposit')
