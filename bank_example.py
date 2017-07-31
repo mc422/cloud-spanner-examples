@@ -72,6 +72,21 @@ class TooManyResults(Exception):
     pass
 
 
+def generate_customer_number():
+    # Only generate positive numbers (because negative numbers are ugly).
+    # Because of the birthday paradox, we don't expect to see duplicates
+    # until we have 2^31.5 customers (3 billion), which is fine.
+    return random.randrange(0, (1<<63)-1)
+
+
+def generate_account_number():
+    return random.randrange(0, (1<<63)-1)
+
+
+CUSTOMERS = [generate_customer_number() for i in range(5)]
+ACCOUNTS = [generate_account_number() for i in range(5)]
+
+
 def setup_accounts(database):
     """Inserts sample data into the given database.
 
@@ -79,51 +94,55 @@ def setup_accounts(database):
     `create_database`.
     """
     with database.batch() as batch:
-        batch.insert_or_update(
-            table='Customers',
-            columns=('CustomerNumber', 'FirstName', 'LastName',),
-            values=[
-                (1, u'Marc', u'Richards'),
-                (2, u'Catalina', u'Smith'),
-                (3, u'Alice', u'Trentor'),
-                (4, u'Lea', u'Martin'),
-                (5, u'David', u'Lomond')])
-
-        batch.insert_or_update(
-            table='Accounts',
-            columns=('CustomerNumber', 'AccountNumber', 'AccountType',
-                     'Balance', 'CreationTime', 'LastInterestCalculation'),
-            values=[
-                (1, 1, 0, 0, datetime.datetime.utcnow(), None),
-                (1, 2, 1, 0, datetime.datetime.utcnow(), None),
-                (2, 3, 0, 0, datetime.datetime.utcnow(), None),
-                (3, 4, 1, 0, datetime.datetime.utcnow(), None),
-                (4, 5, 0, 0, datetime.datetime.utcnow(), None),
-                ])
-
         batch.delete(
             table='AccountHistory',
             keyset=spanner.KeySet(all_=True))
-
-        batch.insert(
-            table='AccountHistory',
-            columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
-            values=[
-                (1, datetime.datetime.utcnow(), 0,
-                 'New Account Initial Deposit'),
-                (2, datetime.datetime.utcnow(), 0,
-                 'New Account Initial Deposit'),
-                (3, datetime.datetime.utcnow(), 0,
-                 'New Account Initial Deposit'),
-                (4, datetime.datetime.utcnow(), 0,
-                 'New Account Initial Deposit'),
-                (5, datetime.datetime.utcnow(), 0,
-                 'New Account Initial Deposit'),
-                ])
+        batch.delete(
+            table='Accounts',
+            keyset=spanner.KeySet(all_=True))
+        batch.delete(
+            table='Customers',
+            keyset=spanner.KeySet(all_=True))
         if AGGREGATE_BALANCE_SHARDS > 0:
             batch.delete(
                 table='AggregateBalance',
                 keyset=spanner.KeySet(all_=True))
+
+
+        batch.insert(
+            table='Customers',
+            columns=('CustomerNumber', 'FirstName', 'LastName',),
+            values=[
+                (CUSTOMERS[0], u'Marc', u'Richards'),
+                (CUSTOMERS[1], u'Catalina', u'Smith'),
+                (CUSTOMERS[2], u'Alice', u'Trentor'),
+                (CUSTOMERS[3], u'Lea', u'Martin'),
+                (CUSTOMERS[4], u'David', u'Lomond')])
+
+        batch.insert(
+            table='Accounts',
+            columns=('CustomerNumber', 'AccountNumber', 'AccountType',
+                     'Balance', 'CreationTime', 'LastInterestCalculation'),
+            values=[
+                # two accounts for one customer, just to ensure this works
+                (CUSTOMERS[0], ACCOUNTS[0], 0, 0,
+                 datetime.datetime.utcnow(), None),
+                (CUSTOMERS[0], ACCOUNTS[1], 1, 0,
+                 datetime.datetime.utcnow(), None),
+                (CUSTOMERS[1], ACCOUNTS[2], 0, 0,
+                 datetime.datetime.utcnow(), None),
+                (CUSTOMERS[2], ACCOUNTS[3], 1, 0,
+                 datetime.datetime.utcnow(), None),
+                (CUSTOMERS[3], ACCOUNTS[4], 0, 0,
+                 datetime.datetime.utcnow(), None),
+                ])
+
+        batch.insert(
+            table='AccountHistory',
+            columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
+            values = [(ACCOUNTS[i], datetime.datetime.utcnow(), 0,
+                       'New Account Initial Deposit') for i in range(5)])
+        if AGGREGATE_BALANCE_SHARDS > 0:
             batch.insert(
                 table='AggregateBalance',
                 columns=('Shard', 'Balance'),
@@ -336,21 +355,23 @@ def main():
     database = instance.database(database_id)
 
     setup_accounts(database)
-    account_balance(database, 2)
-    customer_balance(database, 1)
-    deposit(database, 1, 1, 150, 'Dollar Fifty Deposit')
+    account_balance(database, ACCOUNTS[1])
+    customer_balance(database, CUSTOMERS[0])
+    deposit(database, CUSTOMERS[0], ACCOUNTS[0], 150, 'Dollar Fifty Deposit')
 
     try:
-        deposit(database, 1, 1, -5000, 'THIS SHOULD FAIL')
+        deposit(database, CUSTOMERS[0], ACCOUNTS[0], -5000,
+                'THIS SHOULD FAIL')
     except NegativeBalance:
         print "Properly failed to go to negative balance"
 
-    deposit(database, 1, 2, 75)
+    deposit(database, CUSTOMERS[0], ACCOUNTS[1], 75)
     for i in range(20):
-        deposit(database, 3, 4, i * 100, 'Deposit %d dollars' % i)
-    account_balance(database, 2)
-    customer_balance(database, 1)
-    last_n_transactions(database, 4, 10)
+        deposit(database, CUSTOMERS[2], ACCOUNTS[3], i * 100,
+                'Deposit %d dollars' % i)
+    account_balance(database, ACCOUNTS[1])
+    customer_balance(database, CUSTOMERS[0])
+    last_n_transactions(database, ACCOUNTS[3], 10)
     compute_interest_for_all(database)
     verify_consistent_balances(database)
 
