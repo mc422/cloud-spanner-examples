@@ -76,6 +76,8 @@ def generate_customer_number():
     # Only generate positive numbers (because negative numbers are ugly).
     # Because of the birthday paradox, we don't expect to see duplicates
     # until we have 2^31.5 customers (3 billion), which is fine.
+    # More information on choosing a good primary key for your table is here:
+    # https://stackoverflow.com/questions/43377489/easiest-primary-key-for-main-table
     return random.randrange(0, (1<<63)-1)
 
 
