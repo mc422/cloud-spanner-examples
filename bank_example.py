@@ -231,6 +231,9 @@ def deposit_helper(transaction, customer_number, account_number, cents, memo,
             (account_number, timestamp, cents, memo),
             ])
     if AGGREGATE_BALANCE_SHARDS > 0:
+        # Note that one downside of using a sharded counter is that
+        # it typically involves an extra machine in your deposit transactions.
+        # You are basically trading off write efficiency for read efficiency.
         shard = random.randint(0, AGGREGATE_BALANCE_SHARDS - 1)
         results = transaction.execute_sql(
             "SELECT Balance FROM AggregateBalance WHERE Shard=%d" % shard)
