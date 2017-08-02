@@ -209,10 +209,10 @@ def last_n_transactions(database, account_number, n):
         """SELECT Ts, ChangeAmount, Memo FROM AccountHistory
            WHERE AccountNumber=@account ORDER BY Ts DESC LIMIT @num""",
         params=params, param_types=param_types)
-    results.consume_all()
-    print "RESULTS"
-    pprint.pprint(results.rows)
-    return results.rows
+    ret = list(results)
+    print "RESULTS", ret
+    pprint.pprint(ret)
+    return ret
 
 
 def deposit_helper(transaction, customer_number, account_number, cents, memo,
