@@ -343,6 +343,14 @@ def verify_consistent_balances(database):
         assert balance_fast == balance_slow
 
 
+def total_bank_balance(database):
+    results = database.execute_sql(
+        """SELECT SUM(Balance) From AggregateBalance""")
+    balance = extract_single_cell(results)
+    print "TOTAL BANK BALANCE", balance
+    return balance
+
+
 def main():
     # Instantiate a client.
     spanner_client = spanner.Client()
@@ -378,6 +386,7 @@ def main():
     customer_balance(database, CUSTOMERS[0])
     last_n_transactions(database, ACCOUNTS[3], 10)
     compute_interest_for_all(database)
+    total_bank_balance(database)
     verify_consistent_balances(database)
 
 
