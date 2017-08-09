@@ -71,6 +71,9 @@ class NoResults(Exception):
 class TooManyResults(Exception):
     pass
 
+class Unsupported(Exception):
+    pass
+
 
 def generate_customer_number():
     # Only generate positive numbers (because negative numbers are ugly).
@@ -344,6 +347,8 @@ def verify_consistent_balances(database):
 
 
 def total_bank_balance(database):
+    if AGGREGATE_BALANCE_SHARDS <= 0:
+        raise Unsupported("There is no fast way to compute aggregate balance")
     results = database.execute_sql(
         """SELECT SUM(Balance) From AggregateBalance""")
     balance = extract_single_cell(results)
