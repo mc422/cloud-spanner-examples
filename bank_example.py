@@ -11,6 +11,7 @@ from google.cloud.proto.spanner.v1 import type_pb2
 
 """
 This files assumes a schema:
+# NOTE THAT COMMENTS '#' MUST BE REMOVED
 
 CREATE TABLE Customers (
  CustomerNumber INT64 NOT NULL,
@@ -361,13 +362,13 @@ def main():
     spanner_client = spanner.Client()
 
     # Your Cloud Spanner instance ID.
-    instance_id = 'curtiss-test'
+    instance_id = 'my-instance'
 
     # Get a Cloud Spanner instance by ID.
     instance = spanner_client.instance(instance_id)
 
     # Your Cloud Spanner database ID.
-    database_id = 'testbank'
+    database_id = 'my-database'
 
     # Get a Cloud Spanner database by ID.
     database = instance.database(database_id)
