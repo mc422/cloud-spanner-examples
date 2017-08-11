@@ -99,12 +99,7 @@ CUSTOMERS = [generate_customer_number() for i in range(5)]
 ACCOUNTS = [generate_account_number() for i in range(5)]
 
 
-def setup_customers(database):
-    """Inserts sample data into the given database.
-
-    The database and table must already exist and can be created using
-    `create_database`.
-    """
+def clear_tables(database):
     with database.batch() as batch:
         batch.delete(
             table='AccountHistory',
@@ -121,6 +116,14 @@ def setup_customers(database):
                 keyset=spanner.KeySet(all_=True))
 
 
+def setup_customers(database):
+    """Inserts sample data into the given database.
+
+    The database and table must already exist and can be created using
+    `create_database`.
+    """
+    clear_tables(database)
+    with database.batch() as batch:
         batch.insert(
             table='Customers',
             columns=('CustomerNumber', 'FirstName', 'LastName',),
