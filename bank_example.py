@@ -76,7 +76,7 @@ class Unsupported(Exception):
     pass
 
 
-def generate_customer_number():
+def generate_int64():
     # Only generate positive numbers (because negative numbers are ugly).
     # Because of the birthday paradox, we don't expect to see duplicates
     # until we have 2^31.5 customers (3 billion), which is fine.
@@ -85,8 +85,12 @@ def generate_customer_number():
     return random.randrange(0, (1<<63)-1)
 
 
+def generate_customer_number():
+    return generate_int64()
+
+
 def generate_account_number():
-    return random.randrange(0, (1<<63)-1)
+    return generate_int64()
 
 
 CUSTOMERS = [generate_customer_number() for i in range(5)]
@@ -300,9 +304,7 @@ def compute_interest_for_account(transaction, customer_number, account_number,
     transaction.update(
         table='Accounts',
         columns=('CustomerNumber', 'AccountNumber', 'LastInterestCalculation'),
-        values=[
-            (customer_number, account_number, current_timestamp),
-            ])
+        values=[(customer_number, account_number, current_timestamp)])
 
 
 def compute_interest_for_all(database):
