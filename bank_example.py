@@ -154,7 +154,7 @@ def setup_customers(database):
                 columns=('Shard', 'Balance'),
                 values=[(i, 0) for i in range(AGGREGATE_BALANCE_SHARDS)])
 
-    print 'Inserted data.'
+    print('Inserted data.')
 
 
 def extract_single_row_to_tuple(results):
@@ -181,7 +181,7 @@ def account_balance(database, account_number):
            WHERE AccountNumber=@account""",
         params=params, param_types=param_types)
     balance = extract_single_cell(results)
-    print "ACCOUNT BALANCE", balance
+    print("ACCOUNT BALANCE", balance)
     return balance
 
 
@@ -196,7 +196,7 @@ def customer_balance(database, customer_number):
            WHERE Customers.CustomerNumber=@customer""",
         params=params, param_types=param_types)
     balance = extract_single_cell(results)
-    print "CUSTOMER BALANCE", balance
+    print("CUSTOMER BALANCE", balance)
     return balance
 
 
@@ -214,7 +214,7 @@ def last_n_transactions(database, account_number, n):
            WHERE AccountNumber=@account ORDER BY Ts DESC LIMIT @num""",
         params=params, param_types=param_types)
     ret = list(results)
-    print "RESULTS", ret
+    print("RESULTS", ret)
     pprint.pprint(ret)
     return ret
 
@@ -265,7 +265,7 @@ def deposit(database, customer_number, account_number, cents, memo=None):
                        memo, new_balance, datetime.datetime.utcnow())
 
     database.run_in_transaction(deposit_runner)
-    print 'Transaction complete.'
+    print('Transaction complete.')
 
 
 def compute_interest_for_account(transaction, customer_number, account_number,
@@ -330,10 +330,10 @@ def compute_interest_for_all(database):
                 database.run_in_transaction(compute_interest_for_account,
                                             customer_number, account_number,
                                             last_calculation)
-                print "Computed interest for account ", account_number
+                print("Computed interest for account ", account_number)
             except RowAlreadyUpdated:
-                print "Account {account_number} already updated".format(
-                    account_number=account_number)
+                print("Account {account_number} already updated".format(
+                        account_number=account_number))
         if zero_results:
             break
 
@@ -343,7 +343,7 @@ def verify_consistent_balances(database):
             database.execute_sql("SELECT SUM(Balance) FROM Accounts"))
         balance_fast = extract_single_cell(
             database.execute_sql("SELECT SUM(Balance) FROM AggregateBalance"))
-        print "verifying that balances match: ", balance_slow, balance_fast
+        print("verifying that balances match: ", balance_slow, balance_fast)
         assert balance_fast == balance_slow
 
 
@@ -353,7 +353,7 @@ def total_bank_balance(database):
     results = database.execute_sql(
         """SELECT SUM(Balance) From AggregateBalance""")
     balance = extract_single_cell(results)
-    print "TOTAL BANK BALANCE", balance
+    print("TOTAL BANK BALANCE", balance)
     return balance
 
 
@@ -382,7 +382,7 @@ def main():
         deposit(database, CUSTOMERS[0], ACCOUNTS[0], -5000,
                 'THIS SHOULD FAIL')
     except NegativeBalance:
-        print "Properly failed to go to negative balance"
+        print("Properly failed to go to negative balance")
 
     deposit(database, CUSTOMERS[0], ACCOUNTS[1], 75)
     for i in range(20):
