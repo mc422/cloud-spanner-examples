@@ -27,7 +27,9 @@ CREATE TABLE Accounts (
  AccountNumber INT64 NOT NULL,
  CreationTime TIMESTAMP NOT NULL,
  AccountType INT64 NOT NULL,  # (0 - savings, 1 - checking)
- Balance INT64 NOT NULL # (cents)
+ Balance INT64 NOT NULL, # (cents)
+ # only necessary for compute_interest_for_all
+ LastInterestCalculation TIMESTAMP
 ) PRIMARY KEY (CustomerNumber, AccountNumber),
   INTERLEAVE IN PARENT Customers;
 
