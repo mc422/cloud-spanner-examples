@@ -21,7 +21,9 @@ CREATE TABLE Customers (
 
 
 # Note that 'Balance' is a performance optimization in some ways,
-# as it could be reconstructed from AccountHistory
+# as it could be reconstructed from AccountHistory.
+# There is also a viable approach where Balance is put in the
+# AccountHistory table.
 CREATE TABLE Accounts (
  CustomerNumber INT64 NOT NULL,
  AccountNumber INT64 NOT NULL,
