@@ -6,6 +6,9 @@ Example of a bank schema and a few interesting transactions.
 import datetime
 import pprint
 import random
+import string
+import sys
+import time
 from google.cloud import spanner
 from google.cloud.proto.spanner.v1 import type_pb2
 
@@ -113,9 +116,115 @@ def clear_tables(database):
             table='Customers',
             keyset=spanner.KeySet(all_=True))
         if AGGREGATE_BALANCE_SHARDS > 0:
+            # Gotcha: Don't actually delete the rows from this table.
+            # Just zero them out.
             batch.delete(
                 table='AggregateBalance',
                 keyset=spanner.KeySet(all_=True))
+            batch.insert(
+                table='AggregateBalance',
+                columns=('Shard', 'Balance'),
+                values=[(i, 0) for i in range(AGGREGATE_BALANCE_SHARDS)])
+
+
+def random_datetime(dt_start, dt_end, random_number):
+    """
+    Get a time at a proportion of a range of two formatted times.
+    start and end should be strings specifying times formated in the
+    given format (strftime-style), giving an interval [start, end].
+    prop specifies how a proportion of the interval to be taken after
+    start.  The returned time will be in the specified format.
+    """
+    start_time = time.mktime(dt_start.timetuple()) + dt_start.microsecond / 1000000.0
+    end_time = time.mktime(dt_end.timetuple()) + dt_end.microsecond / 1000000.0
+    random_time = start_time + random_number * (end_time - start_time)
+    return datetime.datetime.fromtimestamp(random_time)
+
+
+def generate_datetime():
+    return random_datetime(datetime.datetime(1980,1,1),
+                           datetime.datetime(2019,12,31),
+                           random.random())
+
+def generate_datetime_after(dt):
+    return random_datetime(dt, datetime.datetime(2019,12,31),
+                           random.random())
+
+
+def generate_string():
+    length = random.randrange(6,32)
+    return ''.join(random.choice(string.ascii_uppercase + string.digits)
+                   for _ in range(length))
+
+
+def add_customer_to_batch(batch, customer_number, seed_account_number):
+    """Insert a randomly generated customer"""
+    # cluster customer/account numbers around the seed to try to get the
+    # in the same split, which will reduce number of participant splits in commits
+    next_account_number = seed_account_number
+    batch.insert(
+        table='Customers',
+        columns=('CustomerNumber', 'FirstName', 'LastName',),
+        values=[
+            (customer_number, generate_string(), generate_string())])
+    num_accounts = random.randrange(1,8)
+    
+    for i in range(num_accounts):
+        account_number = next_account_number
+        next_account_number += 1  # cluster account numbers
+        creation_date = generate_datetime()
+        balance = 0
+        batch.insert(
+            table='AccountHistory',
+            columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
+            values = [(account_number, creation_date, 0,
+                       'New Account Initial Deposit')])
+        history_size = random.randint(0, 100)
+        for j in range(history_size):
+            new_balance = -1
+            while new_balance < 0:
+                amount = random.randrange(-2000, 10000)
+                new_balance = balance + amount
+            balance = new_balance
+            batch.insert(
+                table='AccountHistory',
+                columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
+                values = [(account_number, generate_datetime_after(creation_date), amount,
+                           generate_string())])
+
+        batch.insert(
+            table='Accounts',
+            columns=('CustomerNumber', 'AccountNumber', 'AccountType',
+                     'Balance', 'CreationTime', 'LastInterestCalculation'),
+            values=[(customer_number, account_number, random.randrange(0,1),
+                     balance, creation_date, None)])
+        
+
+def setup_customers_bulk(database):
+    """Bulk insert a lot of test data"""
+    for i in range(1000):
+        with database.batch() as batch:
+            seed_customer_number = generate_customer_number()
+            seed_account_number = generate_account_number()
+            for j in range(10):
+                # allow up to 100 accounts per customer
+                add_customer_to_batch(batch, seed_customer_number + j, seed_account_number + (j*100))
+
+    # now update AggregateBalance
+    # we do this in a read-only transaction for performance reasions.
+    # This will lead to incorrect results if another process is
+    # concurrently mutating the database.
+    if AGGREGATE_BALANCE_SHARDS > 0:
+        results = database.execute_sql(
+            """SELECT SUM(Accounts.Balance) From Accounts""")
+        balance = extract_single_cell(results)
+        print("Balance", balance)
+        with database.batch() as batch:
+            # just put the sum into the first shard. This is fine.
+            batch.update(
+                table='AggregateBalance',
+                columns=('Shard', 'Balance'),
+                values=[(0, balance)])
 
 
 def setup_customers(database):
@@ -124,7 +233,6 @@ def setup_customers(database):
     The database and table must already exist and can be created using
     `create_database`.
     """
-    clear_tables(database)
     with database.batch() as batch:
         batch.insert(
             table='Customers',
@@ -159,11 +267,6 @@ def setup_customers(database):
             columns=('AccountNumber', 'Ts', 'ChangeAmount', 'Memo'),
             values = [(ACCOUNTS[i], datetime.datetime.utcnow(), 0,
                        'New Account Initial Deposit') for i in range(5)])
-        if AGGREGATE_BALANCE_SHARDS > 0:
-            batch.insert(
-                table='AggregateBalance',
-                columns=('Shard', 'Balance'),
-                values=[(i, 0) for i in range(AGGREGATE_BALANCE_SHARDS)])
 
     print('Inserted data.')
 
@@ -371,16 +474,20 @@ def main():
     spanner_client = spanner.Client()
 
     # Your Cloud Spanner instance ID.
-    instance_id = 'my-instance'
+    instance_id = 'curtiss-test'
 
     # Get a Cloud Spanner instance by ID.
     instance = spanner_client.instance(instance_id)
 
     # Your Cloud Spanner database ID.
-    database_id = 'my-database'
+    database_id = 'testbank'
 
     # Get a Cloud Spanner database by ID.
     database = instance.database(database_id)
+
+    #clear_tables(database)
+    setup_customers_bulk(database)
+    sys.exit(0)
 
     setup_customers(database)
     account_balance(database, ACCOUNTS[1])
