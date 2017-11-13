@@ -7,7 +7,7 @@ import datetime
 import pprint
 import random
 from google.cloud import spanner
-from google.cloud.proto.spanner.v1 import type_pb2
+from google.cloud.spanner_v1.proto import type_pb2
 
 """
 This files assumes a schema:
