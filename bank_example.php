@@ -114,21 +114,90 @@ function setup_customers($database) {
 	print "Inserted Data."
 	}
 
-function extract_single_row_to_tuple($results) {
-	
-}
+function extract_single_row_to_array($results) {
+	// Originally called tuple, but PHP does not support tuples, only arrays
+	foreach ($results as $r) {
+		return $r;
+		}
+	}
 
 function extract_single_cell($results) {
-	
-}
+	$r = extract_single_row_to_array($results);
+	return $r[0];
+	}
 
 function account_balance($database, $account_number) {
-	
-}
+	$snapshot = $database->snapshot();
+	$results = $snapshot->execute("SELECT Balance 
+		FROM Accounts{FORCE_INDEX=UniqueAccountNumbers} 
+		WHERE AccountNumber = $account_number");
+	$balance = extract_single_cell($results);
+	print "Account Balance: $balance";
+	return $balance;
+	}
 
 function customer_balance($database, $customer_number) {
+	$snapshot = $database->snapshot();
+	$results = $snapshot->execute("SELECT sum(Accounts.Balance) 
+		FROM Accounts a INNER JOIN Customers c
+		ON a.CustomerNumber = c.CustomerNumber
+		WHERE c.CustomerNumber = $customer_number");
+	$balance = extract_single_cell($results);
+	print "Account Balance: $balance";
+	return $balance;
+	}
+
+function last_n_transactions($database, $account_number, $n) {
+	$snapshot = $database->snapshot();
+	$results = $snapshot->execute("SELECT Ts, ChargeAmount, Memo
+		FROM Accounts{FORCE_INDEX=UniqueAccountNumbers} 
+		WHERE AccountNumber = $account_number
+		LIMIT $n");
+	print implode(", ", $results);
+	return $results;
+	}
+
+function deposit_helper($transaction, $customer_number, $account_number, $cents, $memo, $new_balance, $timestamp) {
+	$values = ['CustomerNumber'=>$customer_number, "AccountNumber"=>$account_number, "Balance"=>$new_balance];
+    $table = "Accounts";
+	$operation = $database->transaction(['singleUse' => false])
+        ->updateBatch($table, [$values,])
+        ->commit();
+			$table = "AccountHistory";
+	$operation = $database->transaction(['singleUse' => true])->insertBatch($table, $values)->commit();
+	if ($AGGREGATE_BALANCE_SHARDS > 0) {
+		$shard = rand(0, $AGGREGATE_BALANCE_SHARDS - 1);
+		$snapshot = $database->snapshot();
+		$results = $snapshot->execute_sql("SELECT Balance
+			FROM AggregateBalance 
+			WHERE Shard = $shard");
+		$old_agg_balance = extract_single_cell($results);
+		$new_agg_balance = $old_agg_balance + $cents;
+		$table = "AggregateBalance";
+		$values = array('Shard'=>$shard, 'Balance'=>$new_agg_balance)
+		$operation = $database->transaction(['singleUse' => false])
+			->updateBatch($table, [$values,])
+			->commit();
+		}
+	}
+
+function deposit($database, $customer_number, $account_number, $cents, $memo=NULL) {
+	
+}
+	
+	
+function compute_interest_for_account($transaction, $customer_number, $account_number, $last_interest_calculation) {
 	
 }
 
+function compute_interest_for_all(d$atabase) {
+	
+}
+
+function verify_consistent_balances($database) {
+	
+}
+
+function total_bank_balance($database)
 
 ?>
