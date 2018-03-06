@@ -182,17 +182,70 @@ function deposit_helper($transaction, $customer_number, $account_number, $cents,
 	}
 
 function deposit($database, $customer_number, $account_number, $cents, $memo=NULL) {
-	
-}
+	$database->runTransaction(function (Transaction $t) use ($spanner) {
+		$results = $t->execute_sql("SELECT Balance From Accounts
+               WHERE AccountNumber='$account_number'
+               AND CustomerNumber='$customer_number'");
+	   		$old_balance = extract_single_cell($results);
+	   		$new_balance = $old_balance + $cents;
+			if ($cents < 0 && $new_balance < 0) {
+				// Catch Exception for negative balance
+				}
+			deposit_helper($t, $customer_number, $account_number, $cents, $memo, $new_balance, datetime.datetime.utcnow());
+			// Need to fix this, for manually throwing an error in PHP.
+			database.run_in_transaction(deposit_runner)
+			print('Transaction complete.')
+		}
+	}
 	
 	
 function compute_interest_for_account($transaction, $customer_number, $account_number, $last_interest_calculation) {
-	
-}
+	$results = $transaction->execute_sql("SELECT Balance, CURRENT_TIMESTAMP()
+					FROM Accounts
+    				WHERE CustomerNumber='$customer_number'
+					AND AccountNumber='$account_number'
+					AND (LastInterestCalculation IS NULL 
+						OR LastInterestCalculation='$last_interest_calculation'");
+	list($old_balance, $current_timestamp) = extract_single_row_to_tuple($results);
+	if ($old_balance == None || $current_timestamp == None) {
+		#throw an exception, RowAlreadyUpdated, for NoResults
+		}
+		$cents = (int) (0.01 * $old_balance);
+		$new_balance = $old_balance + $cents;
+		deposit_helper($transaction, $customer_number, $account_number, $cents, 'Monthly Interest', $new_balance, $current_timestamp);
+		$values = ['CustomerNumber'=>$customer_number, 
+				"AccountNumber"=>$account_number,
+				"lastInterestCalculation"=>$current_timestamp];
+	    $table = "Accounts";
+		$transaction->updateBatch($table, [$values,]);
+	}
 
-function compute_interest_for_all(d$atabase) {
-	
-}
+function compute_interest_for_all($database) {
+	$batch_size = 2;
+	while (TRUE) {
+		$results = $database->execute_sql("SELECT CustomerNumber, AccountNumber, LastInterestCalculation 
+			FROM Accounts
+    		WHERE LastInterestCalculation IS NULL
+			OR (EXTRACT(MONTH FROM LastInterestCalculation) <> EXTRACT(MONTH FROM CURRENT_TIMESTAMP())
+			AND EXTRACT(YEAR FROM LastInterestCalculation) <> EXTRACT(YEAR FROM CURRENT_TIMESTAMP()))
+    		LIMIT $batch_size");
+			$zero_results = TRUE;
+			// Try
+			foreach ($results as $r) {
+				$zero_results = FALSE;
+				$database->runTransaction(function (Transaction $t) use ($spanner) {
+					compute_interest_for_account($t, 
+						$r['CustomerNumber'], 
+						$r['AccountNumber'],
+						$r['LastInterestCalculation']);
+					}); 
+					print "Computed interest for account {$r['AccountNumber']}.";
+					// Needs to execute only if exception "Row already updated."
+					print "Account {$r['AccountNumber']} already updated.";
+				}
+				
+		}
+	}
 
 function verify_consistent_balances($database) {
 	
