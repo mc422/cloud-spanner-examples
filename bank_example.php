@@ -17,12 +17,8 @@ Note: This bnchmark script assumes that the table has a PK field named "id".
 
 */
 
-$msg = "";
-$arrKEYS = [];
-$arrOPERATIONS = ['readproportion', 'updateproportion', 'scanproportion', 'insertproportion'];
-
 # if zero, then don't process/use this table at all.
-AGGREGATE_BALANCE_SHARDS = 16
+$AGGREGATE_BALANCE_SHARDS = 16;
 class NegativeBalance {
 	}
 class RowAlreadyUpdated{
@@ -51,25 +47,25 @@ function generate_account_number() {
 $CUSTOMERS = array();
 $ACCOUNTS = array();
 
-for (i = 0; i < 5; i++) {
+for ($i = 0; $i < 5; $i++) {
 	$CUSTOMERS[] = generate_customer_number();
 	$ACCOUNTS[] = generate_account_number();
 	}
 
 function clear_tables($database) {
     $operation = $database->transaction(['singleUse' => false])
-        ->deleteBatch('AccountHistory', )
+        ->deleteBatch('AccountHistory')
         ->commit();
     $operation = $database->transaction(['singleUse' => false])
-        ->deleteBatch('Accounts', )
+        ->deleteBatch('Accounts')
         ->commit();
     $operation = $database->transaction(['singleUse' => false])
-        ->deleteBatch('Customers', )
+        ->deleteBatch('Customers')
         ->commit();
 	if ($AGGREGATE_BALANCE_SHARDS > 0) {
 		$operation = $database->transaction(['singleUse' => false])
-        	->deleteBatch('AggregateBalance', )
-			->commit();
+        	->deleteBatch('AggregateBalance')
+		->commit();
 		}
 	}
 
@@ -99,7 +95,7 @@ function setup_customers($database) {
 	$table = "AccountHistory";
 	$values = array();
 	foreach ($ACCOUNTS as $a) {
-		$values[] = array('AccountNumber'=>$a, 'Ts'=>date(DATE_ATOM, time()), 'ChangeAmount'=>0, 'Memo'=>'New Account Initial Deposit')
+		$values[] = array('AccountNumber'=>$a, 'Ts'=>date(DATE_ATOM, time()), 'ChangeAmount'=>0, 'Memo'=>'New Account Initial Deposit');
 		}
 	$operation = $database->transaction(['singleUse' => true])->insertBatch($table, $values)->commit();
 
@@ -111,7 +107,7 @@ function setup_customers($database) {
 			}
 		$operation = $database->transaction(['singleUse' => true])->insertBatch($table, $values)->commit();
 		}
-	print "Inserted Data."
+	print "Inserted Data.";
 	}
 
 function extract_single_row_to_array($results) {
@@ -174,7 +170,7 @@ function deposit_helper($transaction, $customer_number, $account_number, $cents,
 		$old_agg_balance = extract_single_cell($results);
 		$new_agg_balance = $old_agg_balance + $cents;
 		$table = "AggregateBalance";
-		$values = array('Shard'=>$shard, 'Balance'=>$new_agg_balance)
+		$values = array('Shard'=>$shard, 'Balance'=>$new_agg_balance);
 		$operation = $database->transaction(['singleUse' => false])
 			->updateBatch($table, [$values,])
 			->commit();
@@ -193,9 +189,9 @@ function deposit($database, $customer_number, $account_number, $cents, $memo=NUL
 				}
 			deposit_helper($t, $customer_number, $account_number, $cents, $memo, $new_balance, datetime.datetime.utcnow());
 			// Need to fix this, for manually throwing an error in PHP.
-			database.run_in_transaction(deposit_runner)
-			print('Transaction complete.')
-		}
+			//$database->run_in_transaction(deposit_runner);
+			print('Transaction complete.');
+		});
 	}
 	
 	
