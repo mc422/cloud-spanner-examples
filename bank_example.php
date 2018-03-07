@@ -229,28 +229,55 @@ function compute_interest_for_all($database) {
 			OR (EXTRACT(MONTH FROM LastInterestCalculation) <> EXTRACT(MONTH FROM CURRENT_TIMESTAMP())
 			AND EXTRACT(YEAR FROM LastInterestCalculation) <> EXTRACT(YEAR FROM CURRENT_TIMESTAMP()))
     		LIMIT $batch_size");
-			$zero_results = TRUE;
-			// Try
-			foreach ($results as $r) {
-				$zero_results = FALSE;
-				$database->runTransaction(function (Transaction $t) use ($spanner) {
-					compute_interest_for_account($t, 
-						$r['CustomerNumber'], 
-						$r['AccountNumber'],
-						$r['LastInterestCalculation']);
-					}); 
-					print "Computed interest for account {$r['AccountNumber']}.";
-					// Needs to execute only if exception "Row already updated."
-					print "Account {$r['AccountNumber']} already updated.";
-				}
-				
+		$zero_results = TRUE;
+		// Try
+		foreach ($results as $r) {
+			$zero_results = FALSE;
+			$database->runTransaction(function (Transaction $t) use ($spanner) {
+				compute_interest_for_account($t, 
+					$r['CustomerNumber'], 
+					$r['AccountNumber'],
+					$r['LastInterestCalculation']);
+				}); 
+				print "Computed interest for account {$r['AccountNumber']}.";
+				// Needs to execute only if exception "Row already updated."
+				print "Account {$r['AccountNumber']} already updated.";
+			}
+		if ($zero_results == TRUE) break;
 		}
 	}
 
 function verify_consistent_balances($database) {
-	
-}
+	if ($AGGREGATE_BALANCE_SHARDS > 0) {
+		$balance_slow = extract_single_cell($database->execute_sql("select sum(balance) from Accounts"));
+		$balance_fast = extract_single_cell($database->execute_sql("select sum(balance) from AggregateBalance"));
+		assert($balance_slow == $balance_fast);
+		}
+	}
 
-function total_bank_balance($database)
+function total_bank_balance($database) {
+	if ($AGGREGATE_BALANCE_SHARDS <= 0) {
+		print "There is no fast way to compute aggregate balance.";
+		exit;
+		}
+	$results = $database->execute_sql("select sum(balance) from AggregateBalance");
+	$balance = extract_single_cell($results);
+	print "Total bank balance $balance";
+	return $balance;
+	}
+
+
+
+function _main_() {
+    $spanner = new SpannerClient();
+    $instance = $spanner->instance($arrParameters['instance']);
+    $database = $instance->database($arrParameters['database']);
+	setup_customers($database);
+	account_balance($database, $ACCOUNTS[1]);
+	customer_balance($database, $CUSTOMERS[0]);
+    deposit($database, $CUSTOMERS[0], $ACCOUNTS[0], 150, 'Dollar Fifty Deposit');
+
+	}
+
 
 ?>
