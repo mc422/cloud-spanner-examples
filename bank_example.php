@@ -5,15 +5,11 @@ use Google\Cloud\Spanner\SpannerClient;
 require __DIR__ . '/vendor/autoload.php';
 /*
 Uasge:
-php ycsb.php
-  --operationcount={number of operations} \
+php bank_example.php
   --instance=[gcloud instance] \
   --database={database name} \
-  --table={table to use} \
-  --workload={workload file}
 
-Note: all arguments above are mandatory
-Note: This bnchmark script assumes that the table has a PK field named "id".
+Note: all arguments above are mandatory. It is assumed the the database name does not yet exist on you GCP instance.
 
 */
 
@@ -29,6 +25,18 @@ class TooManyResults{
 	}
 class Unsupported{
 	}
+
+function parseCliOptions() {
+    global $arrOPERATIONS;
+    $longopts = array(
+        "instance:",
+        "database:",
+        );
+    $arrParameters = getopt("", $longopts);
+    return $arrParameters;
+    }
+
+
 
 function generate_int64() {
 	// Should check at some point that PHP can support such a large number.
@@ -263,8 +271,8 @@ function total_bank_balance($database) {
 	}
 
 
-
-function _main_() {
+$arrParameters = parseCliOptions();
+//function _main_() {
     $spanner = new SpannerClient();
     $instance = $spanner->instance($arrParameters['instance']);
     $database = $instance->database($arrParameters['database']);
@@ -273,7 +281,7 @@ function _main_() {
 	customer_balance($database, $CUSTOMERS[0]);
     deposit($database, $CUSTOMERS[0], $ACCOUNTS[0], 150, 'Dollar Fifty Deposit');
 
-	}
+//	}
 
 
 ?>
