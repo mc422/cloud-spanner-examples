@@ -1,6 +1,7 @@
 <?php
 namespace Google\Cloud\Samples\Spanner;
 use Google\Cloud\Spanner\SpannerClient;
+use Google\Cloud\Spanner\KeySet;
 # Include the autoloader for libraries installed with composer
 require __DIR__ . '/vendor/autoload.php';
 /*
@@ -61,6 +62,13 @@ for ($i = 0; $i < 5; $i++) {
 	}
 
 function clear_tables($database) {
+    $keyset = new KeySet(['keys'=>[]]);
+    $results = $database->delete("AccountHistory", $keyset);
+    $results = $database->delete("Accounts", $keyset);
+    $results = $database->delete("Customers", $keyset);
+    $results = $database->delete("AggregateBalance", $keyset);
+
+    /*
     $operation = $database->transaction(['singleUse' => false])
         ->deleteBatch('AccountHistory')
         ->commit();
@@ -75,9 +83,12 @@ function clear_tables($database) {
         	->deleteBatch('AggregateBalance')
 		->commit();
 		}
-	}
+*/
+    }
 
 function setup_customers($database) {
+	global $CUSTOMERS;
+	global $ACCOUNTS;
 	clear_tables($database);
 	
 	$table = "Customers";
@@ -172,7 +183,7 @@ function deposit_helper($transaction, $customer_number, $account_number, $cents,
 	if ($AGGREGATE_BALANCE_SHARDS > 0) {
 		$shard = rand(0, $AGGREGATE_BALANCE_SHARDS - 1);
 		$snapshot = $database->snapshot();
-		$results = $snapshot->execute_sql("SELECT Balance
+		$results = $snapshot->execute("SELECT Balance
 			FROM AggregateBalance 
 			WHERE Shard = $shard");
 		$old_agg_balance = extract_single_cell($results);
@@ -187,7 +198,7 @@ function deposit_helper($transaction, $customer_number, $account_number, $cents,
 
 function deposit($database, $customer_number, $account_number, $cents, $memo=NULL) {
 	$database->runTransaction(function (Transaction $t) use ($spanner) {
-		$results = $t->execute_sql("SELECT Balance From Accounts
+		$results = $t->execute("SELECT Balance From Accounts
                WHERE AccountNumber='$account_number'
                AND CustomerNumber='$customer_number'");
 	   		$old_balance = extract_single_cell($results);
@@ -204,7 +215,7 @@ function deposit($database, $customer_number, $account_number, $cents, $memo=NUL
 	
 	
 function compute_interest_for_account($transaction, $customer_number, $account_number, $last_interest_calculation) {
-	$results = $transaction->execute_sql("SELECT Balance, CURRENT_TIMESTAMP()
+	$results = $transaction->execute("SELECT Balance, CURRENT_TIMESTAMP()
 					FROM Accounts
     				WHERE CustomerNumber='$customer_number'
 					AND AccountNumber='$account_number'
@@ -227,7 +238,7 @@ function compute_interest_for_account($transaction, $customer_number, $account_n
 function compute_interest_for_all($database) {
 	$batch_size = 2;
 	while (TRUE) {
-		$results = $database->execute_sql("SELECT CustomerNumber, AccountNumber, LastInterestCalculation 
+		$results = $database->execute("SELECT CustomerNumber, AccountNumber, LastInterestCalculation 
 			FROM Accounts
     		WHERE LastInterestCalculation IS NULL
 			OR (EXTRACT(MONTH FROM LastInterestCalculation) <> EXTRACT(MONTH FROM CURRENT_TIMESTAMP())
@@ -253,8 +264,8 @@ function compute_interest_for_all($database) {
 
 function verify_consistent_balances($database) {
 	if ($AGGREGATE_BALANCE_SHARDS > 0) {
-		$balance_slow = extract_single_cell($database->execute_sql("select sum(balance) from Accounts"));
-		$balance_fast = extract_single_cell($database->execute_sql("select sum(balance) from AggregateBalance"));
+		$balance_slow = extract_single_cell($database->execute("select sum(balance) from Accounts"));
+		$balance_fast = extract_single_cell($database->execute("select sum(balance) from AggregateBalance"));
 		assert($balance_slow == $balance_fast);
 		}
 	}
@@ -264,7 +275,7 @@ function total_bank_balance($database) {
 		print "There is no fast way to compute aggregate balance.";
 		exit;
 		}
-	$results = $database->execute_sql("select sum(balance) from AggregateBalance");
+	$results = $database->execute("select sum(balance) from AggregateBalance");
 	$balance = extract_single_cell($results);
 	print "Total bank balance $balance";
 	return $balance;
