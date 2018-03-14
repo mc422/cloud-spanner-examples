@@ -2,6 +2,9 @@
 namespace Google\Cloud\Samples\Spanner;
 use Google\Cloud\Spanner\SpannerClient;
 use Google\Cloud\Spanner\KeySet;
+use Google\Cloud\Spanner\KeyRange;
+use Google\Cloud\Spanner\Transaction;
+
 # Include the autoloader for libraries installed with composer
 require __DIR__ . '/vendor/autoload.php';
 /*
@@ -42,7 +45,7 @@ function parseCliOptions() {
 function generate_int64() {
 	// Should check at some point that PHP can support such a large number.
 	// Since this is used for a "bank account" number, it may behoove us to just generate a string instead.
-	return rand(0, (1<<63)-1);
+	return abs(rand(0, (1<<63)-1));
 	}
 
 function generate_customer_number() {
@@ -62,7 +65,27 @@ for ($i = 0; $i < 5; $i++) {
 	}
 
 function clear_tables($database) {
-    $keyset = new KeySet(['keys'=>[]]);
+    $keyset = new KeySet();
+
+    /*
+    // You can specify a key for a keyset:
+    $keyset->addKey(102030405060708090);
+    */
+
+    /* 
+    // Or define a range:
+    $range = new KeyRange([
+        //'startType' => KeyRange::TYPE_OPEN,
+        'start' => -8995340435582893004,
+        'endType' => KeyRange::TYPE_CLOSED,
+        'end' => 9049029653893203423
+        ]);
+    
+    $keyset->addRange($range);
+    */
+
+    // But for the sake of this example, we are deleting all data:
+    $keyset->setMatchAll(TRUE);
     $results = $database->delete("AccountHistory", $keyset);
     $results = $database->delete("Accounts", $keyset);
     $results = $database->delete("Customers", $keyset);
@@ -89,6 +112,8 @@ function clear_tables($database) {
 function setup_customers($database) {
 	global $CUSTOMERS;
 	global $ACCOUNTS;
+	global $AGGREGATE_BALANCE_SHARDS;
+	global $spanner;
 	clear_tables($database);
 	
 	$table = "Customers";
@@ -103,18 +128,18 @@ function setup_customers($database) {
 
 	$table = "Accounts";
 	$values = array(
-		array('CustomerNumber'=>$CUSTOMERS[0], 'AccountNumber'=>$ACCOUNTS[0], 'AccountType'=>0, 'Balance'=>0, 'CreationTime'=>date(DATE_ATOM, time()), 'LastInterestCalculation'=>NULL),
-		array('CustomerNumber'=>$CUSTOMERS[1], 'AccountNumber'=>$ACCOUNTS[1], 'AccountType'=>1, 'Balance'=>0, 'CreationTime'=>date(DATE_ATOM, time()), 'LastInterestCalculation'=>NULL),
-		array('CustomerNumber'=>$CUSTOMERS[2], 'AccountNumber'=>$ACCOUNTS[2], 'AccountType'=>0, 'Balance'=>0, 'CreationTime'=>date(DATE_ATOM, time()), 'LastInterestCalculation'=>NULL),
-		array('CustomerNumber'=>$CUSTOMERS[3], 'AccountNumber'=>$ACCOUNTS[3], 'AccountType'=>1, 'Balance'=>0, 'CreationTime'=>date(DATE_ATOM, time()), 'LastInterestCalculation'=>NULL),
-		array('CustomerNumber'=>$CUSTOMERS[4], 'AccountNumber'=>$ACCOUNTS[4], 'AccountType'=>0, 'Balance'=>0, 'CreationTime'=>date(DATE_ATOM, time()), 'LastInterestCalculation'=>NULL)
+		array('CustomerNumber'=>$CUSTOMERS[0], 'AccountNumber'=>$ACCOUNTS[0], 'AccountType'=>0, 'Balance'=>0, 'CreationTime'=>$spanner->timestamp(new \DateTime(date("Y-m-d"), new \DateTimeZone("UTC"))), 'LastInterestCalculation'=>NULL),
+		array('CustomerNumber'=>$CUSTOMERS[1], 'AccountNumber'=>$ACCOUNTS[1], 'AccountType'=>1, 'Balance'=>0, 'CreationTime'=>$spanner->timestamp(new \DateTime(date("Y-m-d"), new \DateTimeZone("UTC"))), 'LastInterestCalculation'=>NULL),
+		array('CustomerNumber'=>$CUSTOMERS[2], 'AccountNumber'=>$ACCOUNTS[2], 'AccountType'=>0, 'Balance'=>0, 'CreationTime'=>$spanner->timestamp(new \DateTime(date("Y-m-d"), new \DateTimeZone("UTC"))), 'LastInterestCalculation'=>NULL),
+		array('CustomerNumber'=>$CUSTOMERS[3], 'AccountNumber'=>$ACCOUNTS[3], 'AccountType'=>1, 'Balance'=>0, 'CreationTime'=>$spanner->timestamp(new \DateTime(date("Y-m-d"), new \DateTimeZone("UTC"))), 'LastInterestCalculation'=>NULL),
+		array('CustomerNumber'=>$CUSTOMERS[4], 'AccountNumber'=>$ACCOUNTS[4], 'AccountType'=>0, 'Balance'=>0, 'CreationTime'=>$spanner->timestamp(new \DateTime(date("Y-m-d"), new \DateTimeZone("UTC"))), 'LastInterestCalculation'=>NULL)
 		);
 	$operation = $database->transaction(['singleUse' => true])->insertBatch($table, $values)->commit();
 
 	$table = "AccountHistory";
 	$values = array();
 	foreach ($ACCOUNTS as $a) {
-		$values[] = array('AccountNumber'=>$a, 'Ts'=>date(DATE_ATOM, time()), 'ChangeAmount'=>0, 'Memo'=>'New Account Initial Deposit');
+		$values[] = array('AccountNumber'=>$a, 'Ts'=>$spanner->timestamp(new \DateTime(date("Y-m-d"), new \DateTimeZone("UTC"))), 'ChangeAmount'=>0, 'Memo'=>'New Account Initial Deposit');
 		}
 	$operation = $database->transaction(['singleUse' => true])->insertBatch($table, $values)->commit();
 
@@ -138,14 +163,17 @@ function extract_single_row_to_array($results) {
 
 function extract_single_cell($results) {
 	$r = extract_single_row_to_array($results);
-	return $r[0];
+	if (is_array($r)) {
+		foreach ($r as $e) {
+			return $e;
+			}
+		}
+	else return $r;
 	}
 
 function account_balance($database, $account_number) {
 	$snapshot = $database->snapshot();
-	$results = $snapshot->execute("SELECT Balance 
-		FROM Accounts{FORCE_INDEX=UniqueAccountNumbers} 
-		WHERE AccountNumber = $account_number");
+	$results = $snapshot->execute("SELECT Balance FROM Accounts@{FORCE_INDEX=UniqueAccountNumbers} WHERE AccountNumber = $account_number");
 	$balance = extract_single_cell($results);
 	print "Account Balance: $balance";
 	return $balance;
@@ -153,10 +181,7 @@ function account_balance($database, $account_number) {
 
 function customer_balance($database, $customer_number) {
 	$snapshot = $database->snapshot();
-	$results = $snapshot->execute("SELECT sum(Accounts.Balance) 
-		FROM Accounts a INNER JOIN Customers c
-		ON a.CustomerNumber = c.CustomerNumber
-		WHERE c.CustomerNumber = $customer_number");
+	$results = $snapshot->execute("SELECT sum(a.Balance) FROM Accounts a INNER JOIN Customers c ON a.CustomerNumber = c.CustomerNumber WHERE c.CustomerNumber = $customer_number");
 	$balance = extract_single_cell($results);
 	print "Account Balance: $balance";
 	return $balance;
@@ -164,15 +189,13 @@ function customer_balance($database, $customer_number) {
 
 function last_n_transactions($database, $account_number, $n) {
 	$snapshot = $database->snapshot();
-	$results = $snapshot->execute("SELECT Ts, ChargeAmount, Memo
-		FROM Accounts{FORCE_INDEX=UniqueAccountNumbers} 
-		WHERE AccountNumber = $account_number
-		LIMIT $n");
+	$results = $snapshot->execute("SELECT Ts, ChargeAmount, Memo FROM Accounts@{FORCE_INDEX=UniqueAccountNumbers} WHERE AccountNumber = $account_number LIMIT $n");
 	print implode(", ", $results);
 	return $results;
 	}
 
 function deposit_helper($transaction, $customer_number, $account_number, $cents, $memo, $new_balance, $timestamp) {
+	global $AGGREGATE_BALANCE_SHARDS;
 	$values = ['CustomerNumber'=>$customer_number, "AccountNumber"=>$account_number, "Balance"=>$new_balance];
     $table = "Accounts";
 	$operation = $database->transaction(['singleUse' => false])
@@ -183,9 +206,7 @@ function deposit_helper($transaction, $customer_number, $account_number, $cents,
 	if ($AGGREGATE_BALANCE_SHARDS > 0) {
 		$shard = rand(0, $AGGREGATE_BALANCE_SHARDS - 1);
 		$snapshot = $database->snapshot();
-		$results = $snapshot->execute("SELECT Balance
-			FROM AggregateBalance 
-			WHERE Shard = $shard");
+		$results = $snapshot->execute("SELECT Balance FROM AggregateBalance WHERE Shard = $shard");
 		$old_agg_balance = extract_single_cell($results);
 		$new_agg_balance = $old_agg_balance + $cents;
 		$table = "AggregateBalance";
@@ -197,7 +218,8 @@ function deposit_helper($transaction, $customer_number, $account_number, $cents,
 	}
 
 function deposit($database, $customer_number, $account_number, $cents, $memo=NULL) {
-	$database->runTransaction(function (Transaction $t) use ($spanner) {
+	global $spanner;
+	$database->runTransaction(function (Transaction $t) {
 		$results = $t->execute("SELECT Balance From Accounts
                WHERE AccountNumber='$account_number'
                AND CustomerNumber='$customer_number'");
@@ -263,6 +285,7 @@ function compute_interest_for_all($database) {
 	}
 
 function verify_consistent_balances($database) {
+	global $AGGREGATE_BALANCE_SHARDS;
 	if ($AGGREGATE_BALANCE_SHARDS > 0) {
 		$balance_slow = extract_single_cell($database->execute("select sum(balance) from Accounts"));
 		$balance_fast = extract_single_cell($database->execute("select sum(balance) from AggregateBalance"));
@@ -271,6 +294,7 @@ function verify_consistent_balances($database) {
 	}
 
 function total_bank_balance($database) {
+	global $AGGREGATE_BALANCE_SHARDS;
 	if ($AGGREGATE_BALANCE_SHARDS <= 0) {
 		print "There is no fast way to compute aggregate balance.";
 		exit;
@@ -284,13 +308,14 @@ function total_bank_balance($database) {
 
 $arrParameters = parseCliOptions();
 //function _main_() {
-    $spanner = new SpannerClient();
-    $instance = $spanner->instance($arrParameters['instance']);
-    $database = $instance->database($arrParameters['database']);
+	$spanner = new SpannerClient();
+	$instance = $spanner->instance($arrParameters['instance']);
+	$database = $instance->database($arrParameters['database']);
+	clear_tables($database);
 	setup_customers($database);
 	account_balance($database, $ACCOUNTS[1]);
 	customer_balance($database, $CUSTOMERS[0]);
-    deposit($database, $CUSTOMERS[0], $ACCOUNTS[0], 150, 'Dollar Fifty Deposit');
+	deposit($database, $CUSTOMERS[0], $ACCOUNTS[0], 150, 'Dollar Fifty Deposit');
 
 //	}
 
