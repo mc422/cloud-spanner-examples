@@ -151,7 +151,7 @@ function setup_customers($database) {
 			}
 		$operation = $database->transaction(['singleUse' => true])->insertBatch($table, $values)->commit();
 		}
-	print "Inserted Data.";
+	print "Inserted Data.\n";
 	}
 
 function extract_single_row_to_array($results) {
@@ -175,7 +175,7 @@ function account_balance($database, $account_number) {
 	$snapshot = $database->snapshot();
 	$results = $snapshot->execute("SELECT Balance FROM Accounts@{FORCE_INDEX=UniqueAccountNumbers} WHERE AccountNumber = $account_number");
 	$balance = extract_single_cell($results);
-	print "Account Balance: $balance";
+	print "Account Balance: $balance\n";
 	return $balance;
 	}
 
@@ -183,64 +183,65 @@ function customer_balance($database, $customer_number) {
 	$snapshot = $database->snapshot();
 	$results = $snapshot->execute("SELECT sum(a.Balance) FROM Accounts a INNER JOIN Customers c ON a.CustomerNumber = c.CustomerNumber WHERE c.CustomerNumber = $customer_number");
 	$balance = extract_single_cell($results);
-	print "Account Balance: $balance";
+	print "Account Balance: $balance\n";
 	return $balance;
 	}
 
 function last_n_transactions($database, $account_number, $n) {
 	$snapshot = $database->snapshot();
 	$results = $snapshot->execute("SELECT Ts, ChargeAmount, Memo FROM Accounts@{FORCE_INDEX=UniqueAccountNumbers} WHERE AccountNumber = $account_number LIMIT $n");
-	print implode(", ", $results);
+	print implode(", ", $results) . "\n";
 	return $results;
 	}
 
-function deposit_helper($transaction, $customer_number, $account_number, $cents, $memo, $new_balance, $timestamp) {
+function deposit_helper($transaction, $customer_number, $account_number, $cents, $memo, $new_balance) {
 	global $AGGREGATE_BALANCE_SHARDS;
+	global $spanner;
 	$values = ['CustomerNumber'=>$customer_number, "AccountNumber"=>$account_number, "Balance"=>$new_balance];
-    $table = "Accounts";
-	$operation = $database->transaction(['singleUse' => false])
-        ->updateBatch($table, [$values,])
-        ->commit();
-			$table = "AccountHistory";
-	$operation = $database->transaction(['singleUse' => true])->insertBatch($table, $values)->commit();
+	$table = "Accounts";
+	$transaction->updateBatch($table, [$values,]);
+	$table = "AccountHistory";
+	$now = $spanner->timestamp(new \DateTime(date("Y-m-d H:i:s.u"), new \DateTimeZone("UTC")));
+	$values = ['AccountNumber'=>$account_number, 'Ts'=>$now, 'ChangeAmount'=>$cents, 'Memo'=>$memo];
+	$transaction->insertBatch($table, [$values,]);
 	if ($AGGREGATE_BALANCE_SHARDS > 0) {
 		$shard = rand(0, $AGGREGATE_BALANCE_SHARDS - 1);
-		$snapshot = $database->snapshot();
-		$results = $snapshot->execute("SELECT Balance FROM AggregateBalance WHERE Shard = $shard");
+		$results = $transaction->execute("SELECT Balance FROM AggregateBalance WHERE Shard = $shard");
 		$old_agg_balance = extract_single_cell($results);
 		$new_agg_balance = $old_agg_balance + $cents;
 		$table = "AggregateBalance";
 		$values = array('Shard'=>$shard, 'Balance'=>$new_agg_balance);
-		$operation = $database->transaction(['singleUse' => false])
-			->updateBatch($table, [$values,])
-			->commit();
+		$transaction->updateBatch($table, [$values,]);
 		}
+	$transaction->commit();
 	}
 
 function deposit($database, $customer_number, $account_number, $cents, $memo=NULL) {
 	global $spanner;
-	$database->runTransaction(function (Transaction $t) {
+	$database->runTransaction(function (Transaction $t) use ($spanner, $customer_number, $account_number, $cents, $memo) {
+		//$now = $spanner->timestamp(new \DateTime(date("Y-m-d"), new \DateTimeZone("UTC")));
 		$results = $t->execute("SELECT Balance From Accounts
-               WHERE AccountNumber='$account_number'
-               AND CustomerNumber='$customer_number'");
-	   		$old_balance = extract_single_cell($results);
-	   		$new_balance = $old_balance + $cents;
-			if ($cents < 0 && $new_balance < 0) {
-				// Catch Exception for negative balance
-				}
-			deposit_helper($t, $customer_number, $account_number, $cents, $memo, $new_balance, datetime.datetime.utcnow());
-			// Need to fix this, for manually throwing an error in PHP.
-			//$database->run_in_transaction(deposit_runner);
-			print('Transaction complete.');
+			WHERE AccountNumber=$account_number
+			AND CustomerNumber=$customer_number");
+	   	$old_balance = extract_single_cell($results);
+	   	$new_balance = $old_balance + $cents;
+		if ($cents < 0 && $new_balance < 0) {
+			// Catch Exception for negative balance
+			}
+		deposit_helper($t, $customer_number, $account_number, $cents, $memo, $new_balance);
+		// Need to fix this, for manually throwing an error in PHP.
+		//$database->run_in_transaction(deposit_runner);
+		print("Transaction complete.\n");
 		});
 	}
 	
 	
 function compute_interest_for_account($transaction, $customer_number, $account_number, $last_interest_calculation) {
+	global $spanner;
 	$results = $transaction->execute("SELECT Balance, CURRENT_TIMESTAMP()
 					FROM Accounts
-    				WHERE CustomerNumber='$customer_number'
-					AND AccountNumber='$account_number'
+    				WHERE CustomerNumber=$customer_number
+					AND AccountNumber=$account_number
 					AND (LastInterestCalculation IS NULL 
 						OR LastInterestCalculation='$last_interest_calculation'");
 	list($old_balance, $current_timestamp) = extract_single_row_to_tuple($results);
@@ -276,9 +277,9 @@ function compute_interest_for_all($database) {
 					$r['AccountNumber'],
 					$r['LastInterestCalculation']);
 				}); 
-				print "Computed interest for account {$r['AccountNumber']}.";
+				print "Computed interest for account {$r['AccountNumber']}.\n";
 				// Needs to execute only if exception "Row already updated."
-				print "Account {$r['AccountNumber']} already updated.";
+				print "Account {$r['AccountNumber']} already updated.\n";
 			}
 		if ($zero_results == TRUE) break;
 		}
